@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vengtoo": {
+      "command": "npx",
+      "args": ["-y", "@vengtoo/mcp-server"],
+      "env": {
+        "VENGTOO_API_KEY": "${VENGTOO_API_KEY}"
+      }
+    }
+  }
+}

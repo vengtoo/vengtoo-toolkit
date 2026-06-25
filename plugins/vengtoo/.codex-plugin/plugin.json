@@ -1,0 +1,56 @@
+{
+  "name": "vengtoo",
+  "version": "0.1.0",
+  "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, and manage everything as Terraform.",
+  "author": {
+    "name": "Vengtoo",
+    "email": "hello@vengtoo.com",
+    "url": "https://vengtoo.com"
+  },
+  "homepage": "https://vengtoo.com",
+  "repository": "https://github.com/vengtoo/vengtoo-toolkit",
+  "license": "MIT",
+  "keywords": [
+    "authorization",
+    "authz",
+    "rbac",
+    "abac",
+    "access-control",
+    "policy",
+    "vengtoo",
+    "mcp",
+    "ai-agents",
+    "zero-trust",
+    "middleware",
+    "sdk",
+    "terraform",
+    "iac",
+    "delegation",
+    "hitl",
+    "jit",
+    "fine-grained-authorization",
+    "fga"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Vengtoo Authorization Toolkit",
+    "shortDescription": "Fine-grained authorization for any project — SDK, agent, policies, MCP, ABAC, debug, Terraform.",
+    "longDescription": "Eight skills covering the full Vengtoo authorization workflow: install the SDK (Node/Go/Python), deploy the local evaluation agent, build RBAC/ABAC policy models via MCP tools, authorize AI agent tool calls (Gateway and Adapter), add attribute-based conditions, debug unexpected decisions, implement delegation and JIT access for AI agents, and manage everything as Terraform HCL.",
+    "defaultPrompt": [
+      "Add Vengtoo authorization to my project.",
+      "Deploy the Vengtoo agent locally.",
+      "Build an authorization model for my app.",
+      "Authorize MCP tool calls with Vengtoo.",
+      "Why is my authorization check returning false?"
+    ],
+    "developerName": "Vengtoo",
+    "category": "Development",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://vengtoo.com",
+    "brandColor": "#6366F1"
+  }
+}

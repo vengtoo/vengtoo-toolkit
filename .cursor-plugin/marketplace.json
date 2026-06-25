@@ -1,0 +1,16 @@
+{
+  "name": "vengtoo-toolkit",
+  "owner": {
+    "name": "Vengtoo"
+  },
+  "metadata": {
+    "description": "A plugin marketplace hosting installable authorization plugins for Vengtoo."
+  },
+  "plugins": [
+    {
+      "name": "vengtoo",
+      "source": "./plugins/vengtoo",
+      "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, and manage everything as Terraform."
+    }
+  ]
+}

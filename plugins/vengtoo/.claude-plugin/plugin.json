@@ -1,0 +1,38 @@
+{
+  "name": "vengtoo",
+  "displayName": "Vengtoo Authorization Toolkit",
+  "version": "0.1.0",
+  "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, and manage everything as Terraform.",
+  "author": {
+    "name": "Vengtoo",
+    "url": "https://vengtoo.com"
+  },
+  "homepage": "https://github.com/vengtoo/vengtoo-toolkit",
+  "repository": "https://github.com/vengtoo/vengtoo-toolkit",
+  "license": "MIT",
+  "keywords": [
+    "authorization",
+    "authz",
+    "rbac",
+    "abac",
+    "access-control",
+    "policy",
+    "vengtoo",
+    "mcp",
+    "ai-agents",
+    "zero-trust",
+    "middleware",
+    "sdk",
+    "terraform",
+    "iac",
+    "delegation",
+    "hitl",
+    "jit",
+    "fine-grained-authorization",
+    "fga",
+    "opa",
+    "open-policy-agent"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
