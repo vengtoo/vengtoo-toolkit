@@ -29,16 +29,13 @@ var Client = vengtoo.NewClient(
 func Require(resourceType, action string) gin.HandlerFunc {
     return func(c *gin.Context) {
         userID := c.GetString("user_id") // set by your auth middleware
-        resourceID := c.Param("id")
-        if resourceID == "" {
-            resourceID = resourceType
-        }
+        resourceID := c.Param("id")      // your system's ID (e.g. "doc-123"), not a Vengtoo UUID
 
         allowed, err := authz.Client.Check(
             c.Request.Context(),
-            vengtoo.Subject{ID: userID, Type: "user"},
+            vengtoo.Subject{ExternalID: userID, Type: "user"},
             action,
-            vengtoo.Resource{Type: resourceType, ID: resourceID},
+            vengtoo.Resource{Type: resourceType, ExternalID: resourceID},
         )
         if err != nil || !allowed {
             c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
@@ -52,11 +49,14 @@ func Require(resourceType, action string) gin.HandlerFunc {
 router.GET("/documents/:id", authMiddleware, authz.Require("document", "read"), getDocument)
 ```
 
+> Use `ExternalID` when passing your own system's identifiers (URL params, DB IDs, slugs).
+> Use `ID` only when you have the Vengtoo internal UUID.
+
 ### Full authorize response (with reason)
 ```go
 resp, err := authz.Client.Authorize(ctx, &vengtoo.AuthorizeRequest{
-    Subject:  vengtoo.Subject{ID: userID, Type: "user"},
-    Resource: vengtoo.Resource{Type: "document", ID: documentID},
+    Subject:  vengtoo.Subject{ExternalID: userID, Type: "user"},
+    Resource: vengtoo.Resource{Type: "document", ExternalID: documentID},
     Action:   vengtoo.Action{Name: "write"},
     Context:  map[string]interface{}{"ip": c.ClientIP()},
 })
@@ -88,9 +88,9 @@ func VengtooMiddleware(resourceType, action string) func(http.Handler) http.Hand
 
             allowed, err := authz.Client.Check(
                 r.Context(),
-                vengtoo.Subject{ID: userID, Type: "user"},
+                vengtoo.Subject{ExternalID: userID, Type: "user"},
                 action,
-                vengtoo.Resource{Type: resourceType, ID: resourceID},
+                vengtoo.Resource{Type: resourceType, ExternalID: resourceID},
             )
             if err != nil || !allowed {
                 http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
@@ -147,10 +147,10 @@ if err != nil {
 ## Batch evaluation
 ```go
 results, err := client.CheckBatch(ctx, &vengtoo.BatchEvaluationRequest{
-    Subject: vengtoo.Subject{ID: userID, Type: "user"},
+    Subject: vengtoo.Subject{ExternalID: userID, Type: "user"},
     Items: []vengtoo.EvaluationItem{
-        {Resource: vengtoo.Resource{Type: "document", ID: "doc-1"}, Action: vengtoo.Action{Name: "read"}},
-        {Resource: vengtoo.Resource{Type: "invoice", ID: "inv-7"}, Action: vengtoo.Action{Name: "approve"}},
+        {Resource: vengtoo.Resource{Type: "document", ExternalID: "doc-1"}, Action: vengtoo.Action{Name: "read"}},
+        {Resource: vengtoo.Resource{Type: "invoice", ExternalID: "inv-7"}, Action: vengtoo.Action{Name: "approve"}},
     },
 })
 ```

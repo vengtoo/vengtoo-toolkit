@@ -131,36 +131,48 @@ A role groups policies. Skip if doing direct grants only.
 
 ### Step 8: Assign policy
 
-Link the policy to a subject (direct), role, or both:
+The full RBAC chain is: **policy → role → subject**
 
-```bash
-# Via MCP tool: create_policy_assignment
-# policy_id: <policy_id>
-# entity_type: "role"   (or "subject")
-# entity_id: <role_id>  (or <subject_id>)
+```
+assign_policy(policy_id, entity_type: "role", entity_id: <role_id>)
+    then
+assign_role_to_subject(subject_id: <subject_id>, role_id: <role_id>)
 ```
 
-If assigning to a role, also assign the role to the subject:
-```bash
-# Via MCP tool: create_role_assignment
-# subject_id: <subject_id>
-# role_id: <role_id>
+For a direct one-off grant (no role), assign the policy straight to the subject:
 ```
+assign_policy(policy_id, entity_type: "entity", entity_id: <subject_id>)
+```
+
+> **Important**: `entity_type` must be `"entity"` (not `"subject"`) for direct subject assignment, `"role"` for roles, `"group"` for groups. Using the wrong value causes silent `NO_POLICY_MATCH`.
 
 ### Step 9: Verify
 
 Test the full chain with a curl call:
 
 ```bash
+# Using Vengtoo UUIDs:
 curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
   -H "Authorization: Bearer $VENGTOO_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "subject": { "id": "<subject_external_id>", "type": "user" },
-    "resource": { "type": "<resource_type_name>", "id": "<resource_id>" },
+    "subject": { "id": "<subject_vengtoo_uuid>", "type": "user" },
+    "resource": { "type": "<resource_type_name>", "id": "<resource_vengtoo_uuid>" },
+    "action": { "name": "read" }
+  }'
+
+# Using your own system IDs (external_id — recommended):
+curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
+  -H "Authorization: Bearer $VENGTOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": { "external_id": "alice-from-your-db", "type": "user" },
+    "resource": { "type": "<resource_type_name>", "external_id": "doc-123" },
     "action": { "name": "read" }
   }'
 ```
+
+> `resource.id` must be a Vengtoo UUID. If you're using your own identifiers (slugs, DB IDs), use `resource.external_id` instead.
 
 Expected: `{"decision": true, "context": {"reason": "...", "access_path": "role"}}`
 
