@@ -18,8 +18,9 @@ metadata:
 ABAC conditions refine a policy: instead of "Alice can read documents", you get
 "Alice can read documents WHEN she is in the Finance department AND it is a weekday."
 
-Conditions are attached to an existing policy. The base allow/deny still applies — the
-condition is an additional gate that must pass.
+Conditions are attached to an existing policy via the `conditions` field — a flat JSON
+object where each key is an active guardrail or attribute check. All present keys must
+pass (AND logic).
 
 ---
 
@@ -47,39 +48,87 @@ Common answers:
 - **IP / location**: only from corporate network, only from specific country
 - **Resource property**: only documents in a certain state, amount below a threshold
 - **Subject attribute**: only users in a specific department or with a specific clearance
-- **Environment**: only in production namespace, only when request comes via internal network
+- **Environment**: only in production, only when request comes via internal network
 
-### Step 3: Check whether the attribute is already on the resource/subject
+### Step 3: Make sure the attribute is defined and its value is set
 
-For `resource_attribute` conditions: the attribute must be set on the resource as metadata.
-For `subject_attribute` conditions: the attribute must be set on the subject.
+There are two distinct steps — **defining** the attribute schema and **setting** the value on the individual subject or resource.
 
-If not set, set it first:
-```bash
-# Via MCP tool: update_resource
-# id: <resource_id>
-# metadata: { "status": "published", "department": "finance" }
+**For subject attributes:**
+
+First, declare the attribute definition so the dashboard knows about it (powers the subject form dropdown and type hints):
+
+```json
+// MCP: define_subject_attribute
+{
+  "name": "department",
+  "type": "string",
+  "description": "Employee department for policy scoping",
+  "required": false
+}
+```
+
+This is **loose mode** — the backend never rejects a subject that has an undeclared key. Defining it here is purely for dashboard autocomplete and type validation; it has no effect on evaluation.
+
+Then set the actual value on the subject:
+
+```json
+// MCP: update_subject
+{
+  "id": "<subject_id>",
+  "attributes": { "department": "engineering", "clearance": 3 }
+}
+```
+
+Note: `update_subject.attributes` replaces the whole object — include existing attributes you want to keep.
+
+**For resource attributes:**
+
+Attribute definitions live on the resource type schema. Pass `attribute_schema` when creating the resource type, or check the dashboard (**Schema → Resource Types** detail page) to see what's already declared:
+
+```json
+// MCP: create_resource_type
+{
+  "name": "document",
+  "actions": ["read", "write", "delete"],
+  "attribute_schema": [
+    { "name": "status", "type": "string", "description": "Draft / published / archived" },
+    { "name": "classification", "type": "string", "description": "internal / confidential / public" }
+  ]
+}
+```
+
+Again loose mode — resources can carry keys not in the schema. The schema drives the dashboard's resource form and the `resource_attrs` condition picker.
+
+Then set values on the resource with `update_resource`:
+
+```json
+// MCP: update_resource
+{
+  "id": "<resource_id>",
+  "attributes": { "status": "published", "classification": "internal" }
+}
 ```
 
 ### Step 4: Add the condition
 
-Use the MCP tool `add_policy_condition` or update the policy:
+Use the MCP tool `update_policy` with a `conditions` object:
 
-```bash
-# Via MCP tool: update_policy
-# id: <policy_id>
-# conditions: [
-#   {
-#     "type": "time_of_day",
-#     "from": "09:00",
-#     "to": "17:00",
-#     "timezone": "America/New_York",
-#     "days": ["Mon", "Tue", "Wed", "Thu", "Fri"]
-#   }
-# ]
+```json
+{
+  "id": "<policy_id>",
+  "conditions": {
+    "time_window": {
+      "start": "09:00",
+      "end": "17:00",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "tz": "America/New_York"
+    }
+  }
+}
 ```
 
-Multiple conditions are ANDed by default (all must pass).
+Multiple keys in `conditions` are ANDed — all must pass.
 
 ### Step 5: Verify
 
@@ -94,83 +143,163 @@ curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
     "subject": {"id": "alice", "type": "user"},
     "resource": {"type": "document", "id": "doc-42"},
     "action": {"name": "read"},
-    "context": {"current_time": "2026-06-25T14:00:00-04:00"}
+    "context": {"time": "2026-06-25T14:00:00-04:00"}
   }'
 
 # Test should-deny case (outside hours)
-# ... same but with "current_time": "2026-06-25T20:00:00-04:00"
+# ... same but with "time": "2026-06-25T20:00:00-04:00"
 ```
 
 ---
 
 ## Common condition recipes
 
+All conditions go inside the `conditions` object. Mix and match any keys.
+
 ### Business hours only
 ```json
 {
-  "type": "time_of_day",
-  "from": "09:00",
-  "to": "17:00",
-  "timezone": "America/New_York",
-  "days": ["Mon", "Tue", "Wed", "Thu", "Fri"]
+  "conditions": {
+    "time_window": {
+      "start": "09:00",
+      "end": "17:00",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "tz": "America/New_York"
+    }
+  }
 }
 ```
 
 ### IP allowlist (corporate network)
 ```json
 {
-  "type": "ip_range",
-  "ranges": ["10.0.0.0/8", "172.16.0.0/12"],
-  "source": "request_context"
+  "conditions": {
+    "ip_allowlist": {
+      "cidrs": ["10.0.0.0/8", "172.16.0.0/12"]
+    }
+  }
 }
 ```
 
-Pass client IP in the evaluation request context:
+Pass client IP in the evaluation request context: `"context": { "ip": "10.0.1.55" }`
+
+### Geo restriction (allow-list)
 ```json
-{ "context": { "ip": "10.0.1.55" } }
+{
+  "conditions": {
+    "geo_restriction": {
+      "mode": "allow",
+      "countries": ["US", "CA", "GB"]
+    }
+  }
+}
 ```
 
 ### Resource amount ceiling (finance approval)
 ```json
 {
-  "type": "resource_attribute",
-  "field": "amount",
-  "operator": "lte",
-  "value_json": "10000"
+  "conditions": {
+    "resource_attrs": [
+      { "attr": "amount", "op": "<=", "value": 10000 }
+    ]
+  }
 }
 ```
 
-Resource must have `metadata.amount` set.
+Resource must have `amount` set as an attribute.
 
 ### Department match (HR can see HR records only)
 ```json
 {
-  "type": "subject_attribute",
-  "field": "department",
-  "operator": "eq",
-  "value_json": "\"hr\""
+  "conditions": {
+    "subject_attrs": [
+      { "attr": "department", "op": "==", "value": "hr" }
+    ]
+  }
 }
 ```
 
-Subject must have `metadata.department` set.
+Subject must have `department` set as an attribute.
 
 ### Status gate (only published documents are readable)
 ```json
 {
-  "type": "resource_attribute",
-  "field": "status",
-  "operator": "eq",
-  "value_json": "\"published\""
+  "conditions": {
+    "resource_attrs": [
+      { "attr": "status", "op": "==", "value": "published" }
+    ]
+  }
 }
 ```
 
-### TTL / expiring access (JIT)
+### Clearance level gate
 ```json
 {
-  "type": "valid_until",
-  "timestamp": "2026-06-30T00:00:00Z"
+  "conditions": {
+    "subject_attrs": [
+      { "attr": "clearance", "op": ">=", "value": 3 }
+    ]
+  }
 }
 ```
+
+### MFA required
+```json
+{
+  "conditions": {
+    "mfa_required": {
+      "claim_path": "mfa_verified"
+    }
+  }
+}
+```
+
+Pass `"subject": { "attributes": { "mfa_verified": true } }` or `"context": { "mfa_verified": true }` in the evaluation request.
+
+### Context attribute check
+```json
+{
+  "conditions": {
+    "context_attrs": [
+      { "key": "env", "op": "==", "value": "prod" }
+    ]
+  }
+}
+```
+
+Pass `"context": { "env": "prod" }` in the evaluation request.
+
+### Combined: department + business hours
+```json
+{
+  "conditions": {
+    "subject_attrs": [
+      { "attr": "department", "op": "==", "value": "finance" }
+    ],
+    "time_window": {
+      "start": "09:00",
+      "end": "18:00",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "tz": "UTC"
+    }
+  }
+}
+```
+
+---
+
+## Attribute operators
+
+| Operator | Meaning |
+|---|---|
+| `==` | Equal |
+| `!=` | Not equal |
+| `>=` | Greater than or equal |
+| `<=` | Less than or equal |
+| `>` | Greater than |
+| `<` | Less than |
+| `in` | Value in array — `"value"` must be an array |
+| `not_in` | Value not in array — `"value"` must be an array |
 
 ---
 
@@ -178,9 +307,9 @@ Subject must have `metadata.department` set.
 
 | Behaviour | How to achieve |
 |---|---|
-| All conditions must pass (AND) | Add multiple conditions to the same policy |
+| All conditions must pass (AND) | Add multiple keys to the same `conditions` object |
 | Any condition can pass (OR) | Create two separate policies at the same priority |
-| Condition negation | Use `operator: "neq"` or `operator: "not_in"` |
+| Condition negation | Use `op: "!="` or `op: "not_in"` |
 | Deny override | Create a DENY policy at priority 80 with the inverse condition |
 
 ---
@@ -190,9 +319,9 @@ Subject must have `metadata.department` set.
 | Error | Cause | Fix |
 |---|---|---|
 | `CONDITION_FAILED` in response | Condition evaluated but did not pass | Check attribute values; test boundary values |
-| `CONDITION_ERROR` | Attribute referenced doesn't exist | Set attribute on subject/resource first |
-| Condition ignored (always passes) | `value_json` type mismatch | Ensure numeric values use numbers, strings use quotes: `"\"published\""` |
-| Context attribute not evaluated | Client not passing `context` in request | Add `"context": {"ip": ..., "current_time": ...}` to eval request |
+| Condition ignored (always passes) | Attribute value type mismatch | Ensure numeric values are numbers not strings in the policy |
+| Context attribute not evaluated | Client not passing `context` in request | Add `"context": {"ip": ..., "time": ...}` to eval request |
+| Missing subject attribute | Subject attribute not stored and not passed inline | Set attribute via dashboard or pass in `subject.attributes` |
 
 ---
 
@@ -206,7 +335,7 @@ const resp = await vengtoo.authorize({
   action: { name: 'read' },
   context: {
     ip: req.ip,
-    current_time: new Date().toISOString(),
+    time: new Date().toISOString(),
   },
 })
 ```
@@ -219,7 +348,7 @@ resp = client.authorize({
     "action": {"name": "read"},
     "context": {
         "ip": request.client.host,
-        "current_time": datetime.utcnow().isoformat() + "Z",
+        "time": datetime.utcnow().isoformat() + "Z",
     },
 })
 ```
@@ -231,8 +360,8 @@ resp, err := client.Authorize(ctx, &vengtoo.AuthorizeRequest{
     Resource: vengtoo.Resource{Type: "document", ID: documentID},
     Action:   vengtoo.Action{Name: "read"},
     Context:  map[string]interface{}{
-        "ip":           r.RemoteAddr,
-        "current_time": time.Now().UTC().Format(time.RFC3339),
+        "ip":   r.RemoteAddr,
+        "time": time.Now().UTC().Format(time.RFC3339),
     },
 })
 ```

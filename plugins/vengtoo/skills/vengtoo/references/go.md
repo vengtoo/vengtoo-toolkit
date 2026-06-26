@@ -2,8 +2,10 @@
 
 ## Install
 ```bash
-go get github.com/vengtoo/vengtoo-go
+go get github.com/vengtoo/vengtoo-go@latest
 ```
+
+The module path is `github.com/vengtoo/vengtoo-go`. Do not use `github.com/authzx/authzx-go` — that is the old deprecated path and will fail.
 
 ---
 
@@ -51,6 +53,11 @@ router.GET("/documents/:id", authMiddleware, authz.Require("document", "read"), 
 
 > Use `ExternalID` when passing your own system's identifiers (URL params, DB IDs, slugs).
 > Use `ID` only when you have the Vengtoo internal UUID.
+
+> For **type-level checks** (policy applies to all resources of this type), omit both `ID` and `ExternalID`:
+> `vengtoo.Resource{Type: resourceType}` — the SDK sends `id: "*"` automatically.
+
+> `AuthorizeWithPolling` is for Human-in-the-Loop flows only — it pauses and waits for a human to approve in the Vengtoo dashboard. Use `Authorize()` or `Check()` for all standard authorization checks.
 
 ### Full authorize response (with reason)
 ```go

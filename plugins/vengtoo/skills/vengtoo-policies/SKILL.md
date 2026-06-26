@@ -55,6 +55,13 @@ Ask the user:
 1. **What is the resource?** (e.g., "documents", "invoices", "API endpoints", "MCP tools")
 2. **What actions are possible?** (e.g., read, write, delete, approve, invoke)
 3. **Who needs access?** (e.g., specific users, a role like "editor", all authenticated users)
+4. **Type-level or instance-level?** — always confirm this with the user before continuing.
+   - **Type-level**: the policy covers *all* resources of that type — e.g., "editors can read any document". No resource instances needed. Evaluation uses `id: "*"` as a sentinel.
+   - **Instance-level**: the policy covers *one specific resource* — e.g., "Alice can read doc-123 only". Requires creating the resource instance.
+
+   Example prompt: *"Should this policy apply to all documents (type-level), or to a specific document (instance-level)?"*
+
+   Do not infer this from context — the choice has structural consequences and the user must confirm.
 
 Use this to design the model — don't create unnecessary layers.
 
@@ -70,9 +77,11 @@ The resource type defines the blueprint — what kinds of resources exist and wh
 
 One resource type per logical category. If you have documents AND invoices, create two resource types.
 
-### Step 4: Create resource (if instance-specific)
+### Step 4: Create resource (instance-level only — skip for type-level)
 
-If the policy applies to a specific resource instance (e.g., one document, one database):
+**Skip this step entirely if you answered "type-level" in Step 2.** Type-level policies work without any resource instances — evaluation uses `id: "*"` as a sentinel.
+
+Only create a resource instance if the policy targets ONE specific resource:
 
 ```bash
 # Via MCP tool: create_resource
@@ -80,8 +89,6 @@ If the policy applies to a specific resource instance (e.g., one document, one d
 # type: <resource_type_id>
 # external_id: "wiki-001"  (your own system ID, optional)
 ```
-
-If the policy applies to ALL resources of a type, skip this — use resource_type targeting on the policy.
 
 ### Step 5: Create subject(s)
 
@@ -94,8 +101,19 @@ A subject is any actor: user, service, AI agent, device.
 # external_id: "alice-uuid-from-your-db"  (lets Vengtoo resolve by your ID)
 ```
 
-`external_id` is strongly recommended — it lets you pass your own user ID in evaluation requests
-without needing to know Vengtoo's internal UUID.
+`external_id` is strongly recommended — it lets you pass your own user ID in evaluation requests without needing to know Vengtoo's internal UUID.
+
+**For testing:** create subjects manually via the MCP tool.
+
+**In production:** don't pre-create users in Vengtoo. Hook into your signup or onboarding flow and call the API programmatically when a user is created:
+
+```python
+# on user registration
+vengtoo.create_subject(external_id=user.id, type="user")
+vengtoo.assign_role(subject_id=user.id, role="customer")  # if using RBAC
+```
+
+The same applies to resources — create them in Vengtoo when they are created in your system, not upfront. For type-level policies (most common case), you don't need to register resource instances at all.
 
 ### Step 6: Create role (if using RBAC)
 
@@ -148,31 +166,42 @@ assign_policy(policy_id, entity_type: "entity", entity_id: <subject_id>)
 
 ### Step 9: Verify
 
-Test the full chain with a curl call:
+**For type-level policies** — no resource instance needed. Use `id: "*"` as a sentinel meaning "any resource of this type":
 
 ```bash
-# Using Vengtoo UUIDs:
-curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
-  -H "Authorization: Bearer $VENGTOO_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "subject": { "id": "<subject_vengtoo_uuid>", "type": "user" },
-    "resource": { "type": "<resource_type_name>", "id": "<resource_vengtoo_uuid>" },
-    "action": { "name": "read" }
-  }'
-
-# Using your own system IDs (external_id — recommended):
 curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
   -H "Authorization: Bearer $VENGTOO_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "subject": { "external_id": "alice-from-your-db", "type": "user" },
-    "resource": { "type": "<resource_type_name>", "external_id": "doc-123" },
+    "resource": { "type": "document", "id": "*" },
     "action": { "name": "read" }
   }'
 ```
 
-> `resource.id` must be a Vengtoo UUID. If you're using your own identifiers (slugs, DB IDs), use `resource.external_id` instead.
+**For instance-level policies** — pass the specific resource:
+
+```bash
+# By external_id (recommended — your own system's identifier):
+curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
+  -H "Authorization: Bearer $VENGTOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": { "external_id": "alice-from-your-db", "type": "user" },
+    "resource": { "type": "document", "external_id": "doc-123" },
+    "action": { "name": "read" }
+  }'
+
+# By Vengtoo UUID (only if you have the Vengtoo-assigned UUID):
+curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
+  -H "Authorization: Bearer $VENGTOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": { "external_id": "alice-from-your-db", "type": "user" },
+    "resource": { "type": "document", "id": "<vengtoo_resource_uuid>" },
+    "action": { "name": "read" }
+  }'
+```
 
 Expected: `{"decision": true, "context": {"reason": "...", "access_path": "role"}}`
 

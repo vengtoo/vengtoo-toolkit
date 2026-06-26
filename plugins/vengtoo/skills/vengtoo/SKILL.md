@@ -68,6 +68,8 @@ Do NOT guess, do NOT look in other directories. Wait for the user's answer befor
 
 ### Step 2: Check existing integration
 
+If the project already has Vengtoo integrated, read the existing code and follow its patterns — the user's own middleware is ground truth. Use the reference file only when starting from scratch or when the existing code is clearly broken. Never copy patterns from external demo or example projects outside this codebase.
+
 If Vengtoo SDK is already installed, check if it's configured and working:
 - Is `VENGTOO_API_KEY` present?
 - Is there a client instantiation in source files?
@@ -100,8 +102,9 @@ pip install vengtoo
 
 **Go:**
 ```bash
-go get github.com/vengtoo/vengtoo-go
+go get github.com/vengtoo/vengtoo-go@latest
 ```
+The module path is `github.com/vengtoo/vengtoo-go`. Never use `github.com/authzx/authzx-go` — that is the old deprecated path.
 
 ### Step 5: Wire the first authorization check
 

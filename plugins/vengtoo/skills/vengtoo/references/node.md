@@ -21,27 +21,27 @@ export const vengtoo = new Vengtoo({
 ```ts
 import { vengtoo } from './vengtoo'
 
-// Protect a resource type across all matching routes
-app.use('/documents', vengtoo.middleware('document', 'read', {
-  subject: (req) => req.user?.id,          // extract subject ID from your auth layer
-  resource: (req) => req.params.id,        // extract resource ID from route param
-  onDenied: (req, res) => res.status(403).json({ error: 'Forbidden' }),
-}))
+// 3rd arg: function that extracts the subject ID from the request
+app.use('/documents', vengtoo.middleware('document', 'read', (req) => req.user?.id))
 ```
 
 ### Manual check (when you need the full response)
 ```ts
 const resp = await vengtoo.authorize({
-  subject: { id: req.user.id, type: 'user' },
-  resource: { type: 'document', id: req.params.id },
+  subject: { external_id: req.user.id, type: 'user' },
+  resource: { type: 'document', external_id: req.params.id },
   action: { name: 'write' },
   context: { ip: req.ip },
 })
 
 if (!resp.decision) {
-  return res.status(403).json({ error: resp.context.reason })
+  return res.status(403).json({ error: resp.context?.reason })
 }
 ```
+
+> Use `external_id` for your own system's identifiers (user IDs, slugs, DB UUIDs). Use `id` only when you have a Vengtoo-internal UUID.
+
+> For **type-level checks** (policy covers all resources of this type), omit the resource ID entirely: `{ type: 'document' }`. The SDK sends `id: "*"` automatically.
 
 ### Error handling
 ```ts
@@ -50,7 +50,7 @@ import { VengtooError } from '@vengtoo/sdk'
 try {
   const resp = await vengtoo.authorize(req)
 } catch (err) {
-  if (err instanceof VengtooError && err.isAuthError()) {
+  if (err instanceof VengtooError && err.isAuthError) {  // isAuthError is a getter, not a method
     // Bad API key — check VENGTOO_API_KEY
   }
   // Fail closed on all other errors
@@ -72,8 +72,8 @@ import { notFound } from 'next/navigation'
 export default async function DocumentPage({ params }) {
   const session = await auth()
   const resp = await vengtoo.authorize({
-    subject: { id: session.user.id, type: 'user' },
-    resource: { type: 'document', id: params.id },
+    subject: { external_id: session.user.id, type: 'user' },
+    resource: { type: 'document', external_id: params.id },
     action: { name: 'read' },
   })
 
@@ -86,14 +86,17 @@ export default async function DocumentPage({ params }) {
 ```ts
 // middleware.ts
 import { vengtoo } from '@/lib/vengtoo'
+import { getToken } from 'next-auth/jwt'
 
 export async function middleware(request: NextRequest) {
-  const userId = request.headers.get('x-user-id')
+  // Extract the user's identity from the JWT — never trust a raw header from the client
+  const token = await getToken({ req: request })
+  const userId = token?.sub   // JWT sub claim — your auth provider's user ID
   const resourceId = request.nextUrl.pathname.split('/').pop()
 
   const resp = await vengtoo.authorize({
-    subject: { id: userId!, type: 'user' },
-    resource: { type: 'document', id: resourceId! },
+    subject: { external_id: userId!, type: 'user' },
+    resource: { type: 'document', external_id: resourceId! },
     action: { name: 'read' },
   })
 
@@ -128,12 +131,12 @@ Add to `.gitignore`:
 ## Batch evaluation (multiple checks in one call)
 ```ts
 const results = await vengtoo.checkBatch({
-  subject: { id: userId, type: 'user' },   // default for all items
-  items: [
-    { resource: { type: 'document', id: 'doc-1' }, action: { name: 'read' } },
-    { resource: { type: 'document', id: 'doc-2' }, action: { name: 'write' } },
-    { resource: { type: 'invoice', id: 'inv-7' }, action: { name: 'approve' } },
+  subject: { external_id: userId, type: 'user' },
+  evaluations: [
+    { resource: { type: 'document', external_id: 'doc-1' }, action: { name: 'read' } },
+    { resource: { type: 'document', external_id: 'doc-2' }, action: { name: 'write' } },
+    { resource: { type: 'invoice', external_id: 'inv-7' }, action: { name: 'approve' } },
   ]
 })
-// results[0].decision, results[1].decision, results[2].decision
+// results[0], results[1], results[2] — booleans
 ```

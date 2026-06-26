@@ -33,7 +33,7 @@ It caches the bundle to disk, so it keeps serving even if the cloud is temporari
 ## Pre-flight checks (run silently)
 
 1. Is Docker available? `docker info 2>/dev/null`
-2. Is there an existing `docker-compose.yml` in the project?
+2. Is there a `docker-compose.yml` or `docker-compose.yaml` **in the current project root only** (`./docker-compose.yml`)? Do not search parent directories or sibling folders.
 3. Is `VENGTOO_API_KEY` set or in `.env`?
 4. Is the agent already running? `curl -s http://localhost:8181/healthz`
 
@@ -48,7 +48,7 @@ Store in `.env` if not already there.
 
 ### Step 2: Deploy
 
-**If Docker Compose exists in the project**, add the agent as a service:
+**If `./docker-compose.yml` exists in the current project root**, add the agent as a service:
 
 ```yaml
 services:
@@ -176,11 +176,13 @@ Key metrics to watch:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `/readyz` returns 503 | No bundle loaded yet | Wait; check `VENGTOO_API_KEY` is valid |
+| `/readyz` returns 503 `"reason":"no bundle loaded"` | No bundle loaded yet | Wait; check `VENGTOO_API_KEY` is valid |
+| `/readyz` returns 503 `"reason":"bundle loaded but OPA query compilation failed"` | Bundle synced but OPA can't compile the policy (e.g., unregistered built-in, syntax error) | Check `docker logs vengtoo-agent` for `rego_type_error` or parse errors; report to Vengtoo support |
 | `/healthz` shows `degraded: true` | Cloud unreachable; serving stale cache | Check network; agent continues serving |
 | `connection refused` on port 8181 | Agent not running | `docker ps` to check; restart container |
 | `401` from agent | Agent couldn't authenticate with cloud | Verify `VENGTOO_API_KEY` |
 | Bundle never syncs | Firewall blocking outbound to api.vengtoo.com | Open egress on port 443 |
+| Policies with rate-limiting modifiers always pass | `vengtoo_rate_limit` is cloud-only (needs Redis shared state). Agent registers a no-op returning `true` (not rate-limited). Rate limiting is silently skipped on the local agent — use cloud mode if enforcement is required. | By design |
 
 ---
 

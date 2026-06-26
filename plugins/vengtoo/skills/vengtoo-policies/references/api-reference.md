@@ -204,7 +204,7 @@ curl -s -X POST https://api.vengtoo.com/policy-srv/v1/policy-assignments \
   -H "Content-Type: application/json" \
   -d '{
     "policy_id": "<policy-id>",
-    "entity_type": "subject",
+    "entity_type": "entity",
     "entity_id": "<subject-id>",
     "expires_at": "2026-07-01T00:00:00Z"
   }' | jq .
@@ -241,14 +241,26 @@ curl -s -X DELETE https://api.vengtoo.com/entity-srv/v1/role-assignments/<id> \
 
 ## Evaluation
 
+> `id` must be a Vengtoo internal UUID. For your own system identifiers (DB IDs, slugs), use `external_id` instead.
+
 ```bash
-# Single evaluation
+# Single evaluation — using external_id (recommended)
 curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
   -H "Authorization: Bearer $VENGTOO_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "subject": {"id": "user-alice-uuid", "type": "user"},
-    "resource": {"type": "document", "id": "wiki-001"},
+    "subject": {"external_id": "user-alice-uuid", "type": "user"},
+    "resource": {"type": "document", "external_id": "wiki-001"},
+    "action": {"name": "read"}
+  }' | jq .
+
+# Single evaluation — using Vengtoo UUIDs
+curl -s -X POST https://api.vengtoo.com/access/v1/evaluation \
+  -H "Authorization: Bearer $VENGTOO_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": {"id": "<vengtoo-subject-uuid>", "type": "user"},
+    "resource": {"type": "document", "id": "<vengtoo-resource-uuid>"},
     "action": {"name": "read"}
   }' | jq .
 
@@ -257,10 +269,10 @@ curl -s -X POST https://api.vengtoo.com/access/v1/evaluations \
   -H "Authorization: Bearer $VENGTOO_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "subject": {"id": "user-alice-uuid", "type": "user"},
+    "subject": {"external_id": "user-alice-uuid", "type": "user"},
     "items": [
-      {"resource": {"type": "document", "id": "wiki-001"}, "action": {"name": "read"}},
-      {"resource": {"type": "document", "id": "wiki-001"}, "action": {"name": "write"}}
+      {"resource": {"type": "document", "external_id": "wiki-001"}, "action": {"name": "read"}},
+      {"resource": {"type": "document", "external_id": "wiki-001"}, "action": {"name": "write"}}
     ]
   }' | jq '.results[] | {action: .action.name, decision: .decision}'
 ```
