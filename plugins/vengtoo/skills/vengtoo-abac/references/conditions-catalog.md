@@ -1,292 +1,349 @@
 # Vengtoo ABAC Conditions Catalog
 
-All supported condition types, their fields, and valid operators.
+All supported condition types, their fields, and valid operators. Conditions are a flat JSON object on the policy `conditions` field — each key is an active check; all present keys must pass (AND).
 
 ---
 
-## Condition types
+## Attribute conditions
 
-### `time_of_day`
+### `subject_attrs`
 
-Restrict access to a time window within a day.
-
-```json
-{
-  "type": "time_of_day",
-  "from": "09:00",
-  "to": "17:00",
-  "timezone": "America/New_York",
-  "days": ["Mon", "Tue", "Wed", "Thu", "Fri"]
-}
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `from` | yes | HH:MM in 24h format |
-| `to` | yes | HH:MM; if `to` < `from`, wraps midnight |
-| `timezone` | no | IANA timezone string; defaults to UTC |
-| `days` | no | Mon/Tue/Wed/Thu/Fri/Sat/Sun; omit to allow all days |
-
-Pass `current_time` in evaluation `context`:
-```json
-{ "context": { "current_time": "2026-06-25T14:30:00Z" } }
-```
-
----
-
-### `valid_until` (JIT expiry)
-
-Policy condition that passes only before a specific timestamp.
+Checks attributes on the subject at evaluation time.
 
 ```json
 {
-  "type": "valid_until",
-  "timestamp": "2026-07-01T00:00:00Z"
-}
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `timestamp` | yes | RFC3339 UTC timestamp |
-
-Unlike `expires_at` on an assignment (which removes the assignment), `valid_until` on a condition keeps the assignment but conditions the effect. Use `expires_at` on the assignment for most JIT use cases.
-
----
-
-### `ip_range`
-
-Restrict access based on source IP address.
-
-```json
-{
-  "type": "ip_range",
-  "ranges": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
-  "operator": "in"
-}
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `ranges` | yes | Array of CIDR blocks |
-| `operator` | no | `in` (allowlist) or `not_in` (blocklist); default `in` |
-
-Pass `ip` in evaluation `context`:
-```json
-{ "context": { "ip": "10.0.1.55" } }
-```
-
----
-
-### `resource_attribute`
-
-Compare a resource's metadata field to a value.
-
-```json
-{
-  "type": "resource_attribute",
-  "field": "status",
-  "operator": "eq",
-  "value_json": "\"published\""
-}
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `field` | yes | Attribute key in `resource.metadata`. Supports dot-path: `"owner.department"` |
-| `operator` | yes | See operators table below |
-| `value_json` | yes | JSON-encoded value: strings need inner quotes: `"\"published\""`, numbers: `"100"`, booleans: `"true"` |
-
-**Operators:**
-| Operator | Meaning |
-|---|---|
-| `eq` | Equal |
-| `neq` | Not equal |
-| `lt` | Less than (numeric) |
-| `lte` | Less than or equal |
-| `gt` | Greater than (numeric) |
-| `gte` | Greater than or equal |
-| `in` | Value is in array |
-| `not_in` | Value is not in array |
-| `contains` | String contains substring |
-| `starts_with` | String starts with prefix |
-
-**Array `in` example:**
-```json
-{
-  "type": "resource_attribute",
-  "field": "department",
-  "operator": "in",
-  "value_json": "[\"finance\", \"accounting\"]"
-}
-```
-
----
-
-### `subject_attribute`
-
-Compare a subject's metadata field to a value.
-
-```json
-{
-  "type": "subject_attribute",
-  "field": "clearance_level",
-  "operator": "gte",
-  "value_json": "3"
-}
-```
-
-Same operators as `resource_attribute`. The `field` references `subject.metadata.<field>`.
-
-Set attributes on the subject:
-```bash
-# Via MCP tool: update_subject
-# id: <subject_id>
-# metadata: { "clearance_level": 3, "department": "finance" }
-```
-
----
-
-### `context_attribute`
-
-Compare a value from the evaluation request `context` block.
-
-```json
-{
-  "type": "context_attribute",
-  "field": "environment",
-  "operator": "eq",
-  "value_json": "\"production\""
-}
-```
-
-Pass `environment` in the evaluation request:
-```json
-{
-  "subject": {...},
-  "resource": {...},
-  "action": {...},
-  "context": { "environment": "production" }
-}
-```
-
-Useful for:
-- Restricting to specific environments (`environment: production`)
-- Trust level checks (`trust_level: high`)
-- Custom business context (`tenant_tier: enterprise`)
-
----
-
-### `mfa_required`
-
-Allow only if the subject's session included MFA.
-
-```json
-{
-  "type": "mfa_required"
-}
-```
-
-Pass `mfa_verified: true` in evaluation `context`:
-```json
-{ "context": { "mfa_verified": true } }
-```
-
-If not passed, defaults to `false`.
-
----
-
-## Combining conditions (AND / OR)
-
-### AND — all conditions must pass (default)
-
-Add multiple conditions to the same policy:
-```json
-{
-  "conditions": [
-    { "type": "time_of_day", "from": "09:00", "to": "17:00" },
-    { "type": "ip_range", "ranges": ["10.0.0.0/8"] }
-  ]
-}
-```
-
-Both must pass.
-
-### OR — any condition can pass
-
-Create two separate policies with the same effect and priority. Vengtoo evaluates both; if either returns ALLOW, access is granted.
-
-### NOT (negation)
-
-Use `operator: "neq"`, `operator: "not_in"`, or `operator: "not"` (boolean flip):
-
-```json
-{
-  "type": "resource_attribute",
-  "field": "archived",
-  "operator": "eq",
-  "value_json": "false"
-}
-```
-
-### DENY override
-
-Create a separate DENY policy at a higher priority (70–90). The DENY policy can have its own conditions.
-
-```
-priority 80 DENY: archived == true
-priority 50 ALLOW: role editor
-```
-
-Result: editors can access everything EXCEPT archived resources.
-
----
-
-## Setting attributes on resources and subjects
-
-```bash
-# Resource attributes (via MCP or REST)
-PUT /resource-srv/v1/resources/{id}
-{
-  "metadata": {
-    "status": "published",
-    "department": "finance",
-    "amount": 5000,
-    "archived": false
-  }
-}
-
-# Subject attributes
-PUT /entity-srv/v1/subjects/{id}
-{
-  "metadata": {
-    "clearance_level": 2,
-    "department": "hr",
-    "region": "eu"
+  "conditions": {
+    "subject_attrs": [
+      { "attr": "department", "op": "==", "value": "engineering" },
+      { "attr": "clearance", "op": ">=", "value": 3 }
+    ]
   }
 }
 ```
 
-Attributes are arbitrary key-value pairs. Vengtoo stores them and evaluates conditions against them at decision time.
+| Field | Required | Notes |
+|---|---|---|
+| `attr` | yes | Attribute key. Supports dot-path: `"manager.region"` traverses `subject.attributes.manager.region` (up to 4 levels) |
+| `op` | yes | Comparison operator (see table below) |
+| `value` | yes | Right-hand side. Numbers and booleans as native JSON — not strings |
+
+All rows are ANDed. Pass subject attribute values in `subject.attributes` in the eval request, or store them on the subject via `update_subject`.
 
 ---
 
-## Debugging conditions
+### `resource_attrs`
 
-When a decision returns `CONDITION_FAILED`, the response context includes which condition failed:
+Checks attributes on the resource being accessed.
 
 ```json
 {
-  "decision": false,
-  "context": {
-    "reason": "Condition failed: time_of_day check",
-    "reason_code": "CONDITION_FAILED",
-    "failed_condition": {
-      "type": "time_of_day",
-      "evaluated_value": "2026-06-25T21:00:00Z",
-      "expected": { "from": "09:00", "to": "17:00" }
+  "conditions": {
+    "resource_attrs": [
+      { "attr": "status", "op": "==", "value": "published" },
+      { "attr": "region", "op": "in", "value": ["us-east-1", "us-west-2"] }
+    ]
+  }
+}
+```
+
+Same shape as `subject_attrs`. Attribute values sourced from `resource.attributes` in the eval request or stored on the resource via `update_resource`.
+
+---
+
+### `context_attrs`
+
+Checks keys passed in the evaluation request `context` block.
+
+```json
+{
+  "conditions": {
+    "context_attrs": [
+      { "key": "env", "op": "==", "value": "prod" }
+    ]
+  }
+}
+```
+
+Note: field name is `key` (not `attr`) for context rows.
+
+Pass values as `"context": { "env": "prod" }` in the eval request.
+
+---
+
+## Attribute operators
+
+| Operator | Meaning | Notes |
+|---|---|---|
+| `==` | Equal | String, number, boolean |
+| `!=` | Not equal | |
+| `>=` | Greater than or equal | Numeric |
+| `<=` | Less than or equal | Numeric |
+| `>` | Greater than | Numeric |
+| `<` | Less than | Numeric |
+| `in` | Value in array | `value` must be a JSON array |
+| `not_in` | Value not in array | `value` must be a JSON array |
+
+**Type coercion:** stored attributes that are numbers or booleans but the policy stores the value as a string are coerced automatically — `5 >= "3"` and `true == "true"` both work. Prefer native JSON types in the policy for clarity.
+
+**Missing attributes fail closed:** if the attribute is absent from both stored values and the eval request, the condition fails and access is denied.
+
+---
+
+## Guardrails
+
+### `time_window`
+
+Policy only applies within a configured time range.
+
+```json
+{
+  "conditions": {
+    "time_window": {
+      "start": "09:00",
+      "end": "17:00",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "tz": "America/New_York"
     }
   }
 }
 ```
 
-Use this to identify which condition is blocking and verify the attribute values.
+| Field | Required | Notes |
+|---|---|---|
+| `start` | yes | HH:MM in 24h format |
+| `end` | yes | HH:MM; if `end` < `start`, wraps midnight |
+| `days` | no | `mon`/`tue`/`wed`/`thu`/`fri`/`sat`/`sun`; omit to allow all days |
+| `tz` | no | IANA timezone string; defaults to UTC |
+
+Pass `"context": { "time": "2026-06-25T14:30:00-04:00" }` in the eval request. Fails closed if `context.time` is absent.
+
+---
+
+### `ip_allowlist`
+
+Policy only applies when `context.ip` is within an allowed CIDR.
+
+```json
+{
+  "conditions": {
+    "ip_allowlist": {
+      "cidrs": ["10.0.0.0/8", "172.16.0.0/12"]
+    }
+  }
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `cidrs` | yes | Array of CIDR blocks |
+
+Pass `"context": { "ip": "10.0.1.55" }` in the eval request. Fails closed if `context.ip` is absent.
+
+---
+
+### `geo_restriction`
+
+Policy only applies when `context.geo` matches the configured country list.
+
+```json
+{
+  "conditions": {
+    "geo_restriction": {
+      "mode": "allow",
+      "countries": ["US", "CA", "GB"]
+    }
+  }
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `mode` | yes | `allow` — only these countries pass; `deny` — these countries are blocked |
+| `countries` | yes | ISO 3166-1 alpha-2 codes |
+
+Derive `context.geo` in your backend from the request IP; pass as `"context": { "geo": "US" }`. Fails closed if absent.
+
+---
+
+### `mfa_required`
+
+Policy only applies when a specified claim is truthy on the subject or context.
+
+```json
+{
+  "conditions": {
+    "mfa_required": {
+      "claim_path": "mfa_verified"
+    }
+  }
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `claim_path` | yes | Key to check; checked first on `subject.attributes`, then on `context` |
+
+Pass `"subject": { "attributes": { "mfa_verified": true } }` or `"context": { "mfa_verified": true }`. Fails closed if key is absent or falsy.
+
+---
+
+### `trust_level`
+
+Policy only applies when the subject meets a minimum trust tier.
+
+```json
+{
+  "conditions": {
+    "trust_level": {
+      "enabled": true,
+      "minimum": "verified"
+    }
+  }
+}
+```
+
+| Level | Rank |
+|---|---|
+| `new` | 0 — default for subjects with no explicit trust level |
+| `verified` | 1 |
+| `trusted` | 2 |
+| `blocked` | never passes any minimum |
+
+Set a subject's trust level via `PATCH /v1/entities/:id/trust-level`.
+
+---
+
+### `rate_limit`
+
+Policy only applies when the subject has not exceeded a configured request rate.
+
+```json
+{
+  "conditions": {
+    "rate_limit": {
+      "requests": 100,
+      "window_seconds": 60
+    }
+  }
+}
+```
+
+Tracked per subject per policy. Exceeding the limit causes the condition to fail — policy does not match — which effectively denies access for the remainder of the window.
+
+---
+
+### `requires_human_approval`
+
+Policy triggers an approval workflow before granting access. Access is denied until an approver acts.
+
+```json
+{
+  "conditions": {
+    "requires_human_approval": {
+      "timeout_seconds": 3600
+    }
+  }
+}
+```
+
+---
+
+## Combining conditions
+
+| Behaviour | How |
+|---|---|
+| AND (all must pass) | Add multiple keys to the same `conditions` object |
+| OR (any can pass) | Create two separate policies at the same priority |
+| Negation | Use `op: "!="` or `op: "not_in"` in attribute rows |
+| Deny override | Create a DENY policy at priority 70–90 with the inverse condition |
+
+**Example — AND (department + business hours):**
+```json
+{
+  "conditions": {
+    "subject_attrs": [
+      { "attr": "department", "op": "==", "value": "finance" }
+    ],
+    "time_window": {
+      "start": "09:00",
+      "end": "18:00",
+      "days": ["mon", "tue", "wed", "thu", "fri"],
+      "tz": "UTC"
+    }
+  }
+}
+```
+
+---
+
+## `_disabled` soft-off
+
+When you toggle a guardrail off in the dashboard without deleting it, the value is stashed under `conditions._disabled.<key>`. The evaluation engine never reads `_disabled` — it is invisible to all condition checks. Toggling back on moves the key out of `_disabled` and restores the original configuration.
+
+Do not set `_disabled` manually via the API — use the dashboard toggle or omit the key entirely.
+
+---
+
+## Setting attribute values
+
+**Subject attributes** — store on the subject, sourced automatically at eval time:
+```bash
+# MCP: update_subject
+{ "id": "<subject_id>", "attributes": { "department": "engineering", "clearance": 3 } }
+
+# REST
+PUT /v1/entities/<id>
+{ "attributes": { "department": "engineering", "clearance": 3 } }
+```
+
+**Resource attributes** — store on the resource, sourced automatically at eval time:
+```bash
+# MCP: update_resource
+{ "id": "<resource_id>", "attributes": { "status": "published", "classification": "internal" } }
+
+# REST
+PUT /v1/resources/<id>
+{ "attributes": { "status": "published", "classification": "internal" } }
+```
+
+**Inline at eval time** — pass in the eval request body alongside stored values. Stored values win on conflict:
+```json
+{
+  "subject": { "external_id": "alice", "type": "user", "attributes": { "clearance": 3 } },
+  "resource": { "external_id": "doc-1", "type": "document", "attributes": { "status": "published" } },
+  "action": { "name": "read" },
+  "context": { "ip": "10.0.1.55", "time": "2026-06-25T14:00:00Z" }
+}
+```
+
+---
+
+## Subject attribute definitions (schema, loose mode)
+
+Declare the vocabulary of subject attributes your policies use. Loose mode — the backend does not reject subjects with undeclared keys; definitions exist to power dashboard autocomplete and type validation.
+
+```bash
+# MCP: define_subject_attribute
+{ "name": "department", "type": "string", "description": "Employee department", "required": false }
+
+# REST
+POST /v1/subject-attributes
+{ "name": "department", "type": "string", "description": "Employee department", "required": false }
+```
+
+Valid types: `string`, `int`, `bool`, `enum`, `object`, `json`.
+
+For resource attributes, declare the schema on the resource type via `attribute_schema` in `create_resource_type`.
+
+---
+
+## Debugging failed conditions
+
+When a policy condition fails, the evaluation response includes a trace. Common signals:
+
+| Symptom | Likely cause |
+|---|---|
+| `conditions_and_modifiers: false` | A condition key is present but its check failed or its context value is missing |
+| Access denied despite correct role | Policy has a condition that fails closed (missing context key) |
+| Condition always passes unexpectedly | Attribute key not present in `conditions` (omitted key = not evaluated) |
+| `_disabled` key shows in conditions | Guardrail toggled off in dashboard — expected, not a bug |
