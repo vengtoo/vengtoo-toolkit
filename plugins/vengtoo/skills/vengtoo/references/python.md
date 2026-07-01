@@ -86,7 +86,7 @@ def get_subject(credentials: HTTPAuthorizationCredentials = Security(bearer)) ->
 ```python
 from vengtoo import Subject, Resource, Action, AuthorizeRequest
 
-def require(resource_type: str, action: str):
+def authorize(resource_type: str, action: str):
     async def dependency(
         request: Request,
         sub: str = Depends(get_subject),
@@ -106,7 +106,7 @@ def require(resource_type: str, action: str):
 
 # Usage — auth runs as part of the dependency chain
 @app.get("/documents/{id}")
-async def get_document(id: str, _=Depends(require("document", "read"))):
+async def get_document(id: str, _=Depends(authorize("document", "read"))):
     return {"id": id}
 ```
 
@@ -174,7 +174,7 @@ from vengtoo import Vengtoo, Subject, Resource, Action, AuthorizeRequest
 
 client = Vengtoo(api_key=os.environ["VENGTOO_API_KEY"])
 
-def require_permission(resource_type: str, action: str):
+def authorize(resource_type: str, action: str):
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
@@ -193,7 +193,7 @@ def require_permission(resource_type: str, action: str):
 # Usage — auth_required runs first
 @app.route("/documents/<id>")
 @auth_required
-@require_permission("document", "read")
+@authorize("document", "read")
 def get_document(id):
     return {"id": id}
 ```

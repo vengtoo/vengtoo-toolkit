@@ -97,7 +97,7 @@ declare global {
 ```ts
 import { vengtoo } from './vengtoo'
 
-function requirePermission(resourceType: string, action: string) {
+function authorize(resourceType: string, action: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const resp = await vengtoo.authorize({
@@ -117,7 +117,7 @@ function requirePermission(resourceType: string, action: string) {
 }
 
 // Usage — auth middleware runs first
-app.get('/documents/:id', authMiddleware, requirePermission('document', 'read'), getDocument)
+app.get('/documents/:id', authMiddleware, authorize('document', 'read'), getDocument)
 ```
 
 ### Manual check (when you need the full response)

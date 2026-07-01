@@ -109,32 +109,40 @@ func Auth(jwtSecret []byte) func(http.Handler) http.Handler {
 
 ## Gin
 
-### Client setup (`internal/authz/client.go`)
 ```go
-package authz
+package middleware
 
 import (
-    vengtoo "github.com/vengtoo/vengtoo-go"
+    "net/http"
     "os"
+
+    "github.com/gin-gonic/gin"
+    vengtoo "github.com/vengtoo/vengtoo-go"
 )
 
-var Client = vengtoo.NewClient(
+var client = vengtoo.NewClient(
     os.Getenv("VENGTOO_API_KEY"),
     // vengtoo.WithBaseURL("http://localhost:8181"), // local agent
 )
-```
 
-### Gin middleware
-```go
-func Require(resourceType, action string) gin.HandlerFunc {
+func Authorize(resourceType, action string) gin.HandlerFunc {
     return func(c *gin.Context) {
         sub := c.GetString("sub") // set by auth middleware
 
-        allowed, err := authz.Client.Check(
+        // Type-level policy (covers all resources of this type — most common):
+        // Omit ExternalID. Matches on type + action alone; no resource instance
+        // needs to exist in Vengtoo. Note: "*" is a REST-layer sentinel only —
+        // never pass it via the SDK, just leave ExternalID empty.
+        resource := vengtoo.Resource{Type: resourceType}
+
+        // Instance-level policy (one specific resource registered in Vengtoo):
+        // resource = vengtoo.Resource{Type: resourceType, ExternalID: c.Param("id")}
+
+        allowed, err := client.Check(
             c.Request.Context(),
             vengtoo.Subject{ExternalID: sub, Type: "user"},
             action,
-            vengtoo.Resource{Type: resourceType, ExternalID: c.Param("id")},
+            resource,
         )
         if err != nil || !allowed {
             c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
@@ -145,12 +153,12 @@ func Require(resourceType, action string) gin.HandlerFunc {
 }
 
 // Usage — auth middleware runs first, then Vengtoo
-router.GET("/documents/:id", AuthMiddleware(), authz.Require("document", "read"), getDocument)
+// router.GET("/documents/:id", Auth(jwtSecret), Authorize("document", "read"), getDocument)
 ```
 
 ### Full authorize response (with reason)
 ```go
-resp, err := authz.Client.Authorize(ctx, &vengtoo.AuthorizeRequest{
+resp, err := client.Authorize(ctx, &vengtoo.AuthorizeRequest{
     Subject:  vengtoo.Subject{ExternalID: sub, Type: "user"},
     Resource: vengtoo.Resource{Type: "document", ExternalID: c.Param("id")},
     Action:   vengtoo.Action{Name: "write"},
@@ -174,22 +182,37 @@ if !resp.Decision {
 
 ## Chi
 
-### Middleware
 ```go
-func VengtooMiddleware(resourceType, action string) func(http.Handler) http.Handler {
+package middleware
+
+import (
+    "net/http"
+    "os"
+
+    vengtoo "github.com/vengtoo/vengtoo-go"
+)
+
+var client = vengtoo.NewClient(
+    os.Getenv("VENGTOO_API_KEY"),
+    // vengtoo.WithBaseURL("http://localhost:8181"), // local agent
+)
+
+func Authorize(resourceType, action string) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            sub, ok := r.Context().Value(middleware.SubjectKey).(string)
+            sub, ok := r.Context().Value(SubjectKey).(string)
             if !ok || sub == "" {
                 http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
                 return
             }
 
-            allowed, err := authz.Client.Check(
+            // Type-level: omit ExternalID — matches on type + action, no instance needed.
+            // Instance-level: vengtoo.Resource{Type: resourceType, ExternalID: chi.URLParam(r, "id")}
+            allowed, err := client.Check(
                 r.Context(),
                 vengtoo.Subject{ExternalID: sub, Type: "user"},
                 action,
-                vengtoo.Resource{Type: resourceType, ExternalID: chi.URLParam(r, "id")},
+                vengtoo.Resource{Type: resourceType},
             )
             if err != nil || !allowed {
                 http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
@@ -201,8 +224,8 @@ func VengtooMiddleware(resourceType, action string) func(http.Handler) http.Hand
 }
 
 // Usage — auth runs first in the chain
-r.Use(middleware.Auth(jwtSecret))
-r.With(VengtooMiddleware("document", "read")).Get("/documents/{id}", getDocument)
+// r.Use(Auth(jwtSecret))
+// r.With(Authorize("document", "read")).Get("/documents/{id}", getDocument)
 ```
 
 ---

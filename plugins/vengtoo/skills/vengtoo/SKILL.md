@@ -41,6 +41,24 @@ Load the appropriate reference file before proceeding:
 
 ---
 
+## Progress reporting
+
+**Emit a `✔` line every time a significant step completes.** Do not batch them at the end — output each one as it happens so the user sees live progress. Only report steps that actually ran; skip steps that were not needed and do not show them as N/A. If a step was already done (SDK installed, API key present, resource type exists), emit the tick with a note that it was already in place.
+
+Example of what this looks like in practice (adapts to what actually happened):
+```
+✔ Detected Go + Chi — 8 endpoints found
+✔ VENGTOO_API_KEY placeholder added to .env — fill in from app.vengtoo.com → Settings → API Keys
+✔ vengtoo-go v0.3.1 installed
+✔ Authorize("document", "read") wired on GET /documents/:id
+✔ Resource type `document` created (actions: read, write, delete)
+✔ ALLOW policy created — alice → document:read
+✔ alice   → GET /documents/doc-1 → 200 (ALLOW)
+✔ bob     → GET /documents/doc-1 → 403 (NO_POLICY_MATCH, denied)
+```
+
+---
+
 ## Flow
 
 ### Step 1: Detect stack and scan the project
@@ -52,12 +70,11 @@ Look only in the current working directory.
 - `go.mod` → Go; check for gin, chi, fiber
 - `requirements.txt` / `pyproject.toml` → Python; check for fastapi, flask, django
 
-Then scan for route definitions and report what you find:
+Emit ticks for what you find — only include lines that are true:
 ```
 ✔ Detected Go + Chi
 ✔ Found 12 API endpoints
 ✔ Identified likely resource types: documents, projects
-✔ Identified likely actions: read, write, delete
 ```
 
 **If no project exists** (empty directory, no recognised files), first clarify which situation this is:
@@ -79,38 +96,46 @@ Do not ask the user about routes — there are none yet. You are creating the ro
 
 ### Step 2: Check for existing Vengtoo integration
 
-- Is `VENGTOO_API_KEY` set in the environment or `.env`?
 - Is the SDK already installed?
 - Is there an existing authorization middleware?
 
-**If already integrated and working** → report status, suggest `/vengtoo-policies` or `/vengtoo-debug` as next steps. Stop here.
+**If already integrated and working** → emit ticks for what's in place, tell the user it's already wired, and stop.
 
 **If partially integrated** → diagnose and fix rather than re-install.
 
-**If `VENGTOO_API_KEY` is found**, say so explicitly:
-> "Found a `VENGTOO_API_KEY` already set — I'll use that. Let me know if you'd like a different one."
-
 ---
 
-### Step 3: Get API key
+### Step 3: Add the API key placeholder
 
-If no key is found:
-> "Get your API key from app.vengtoo.com → Settings → API Keys"
+Do not try to find, read, or fill in the API key. Always add the placeholder line to `.env` (or `.env.local` for Next.js) and tell the user to fill it in themselves:
 
-Once provided, add it to `.env` (or `.env.local` for Next.js). Add `.env` to `.gitignore` — never commit the key.
+```
+VENGTOO_API_KEY=
+```
+
+If `.env` already exists, append the line (only if `VENGTOO_API_KEY` is not already present — do not add a duplicate). If it does not exist, create it with that line.
+
+Also ensure `.env` is in `.gitignore` — add it if missing.
+
+Then tell the user:
+> "I've added `VENGTOO_API_KEY` to your `.env` — fill in the value from **app.vengtoo.com → Settings → API Keys** before running."
+
+Emit:
+```
+✔ VENGTOO_API_KEY placeholder added to .env
+```
+
+Do not proceed past this step until the user confirms they have filled in the key.
 
 ---
 
 ### Step 4: Pick one endpoint to try
 
-Show the user what was found (or ask for a route if fresh project) and confirm:
+Pick a route that requires a subject, has a clear resource, and is not a public/health endpoint. Suggest it and confirm:
 
-> "I'll wire Vengtoo on one endpoint first so you can see it working. Which route should we try? I'd suggest `GET /documents/:id` — does that work?"
+> "I'll wire Vengtoo on `GET /documents/:id` first so you can see it working — does that work?"
 
-Pick a route that:
-- Requires a subject (user is known by this point)
-- Has a clear resource (something with an ID)
-- Is not a public/health-check endpoint
+For a fresh project, pick the route you just scaffolded.
 
 ---
 
@@ -122,6 +147,16 @@ Load the reference file for the detected stack, then install:
 **Python:** `pip install vengtoo`
 **Go:** `go get github.com/vengtoo/vengtoo-go@latest`
 
+If already installed, emit:
+```
+✔ @vengtoo/sdk already installed
+```
+
+Otherwise install and emit:
+```
+✔ @vengtoo/sdk installed
+```
+
 ---
 
 ### Step 6: Wire the authorization check
@@ -129,56 +164,58 @@ Load the reference file for the detected stack, then install:
 Follow the framework pattern from the reference file. Key principles:
 
 - Wire at **middleware level** on the chosen route — not inside the handler
-- **Resource ID**: pass as `ExternalID` — your own system's identifier, not a Vengtoo UUID
 - **Fail closed**: if Vengtoo is unreachable, deny by default
 
 **For an existing project**: do not assume you know where the caller's identity lives. Read the actual code — trace from an existing protected route backwards through any middleware, context, session, or request struct to find where the authenticated user's ID is set and how it's accessed downstream. Projects vary widely: some use a JWT `sub` in context, some a session store, some a custom claims struct, some a user object on the request, some something unexpected. Find the real thing and use it. Never introduce the placeholder into a real project.
 
-**For a fresh project**: use the placeholder auth from the reference file. It reads `X-User-ID` from the request header so you can test Vengtoo immediately without setting up real auth. The placeholder comment explains exactly what to replace it with when moving to production.
+**For a fresh project**: use the placeholder auth from the reference file. It reads `X-User-ID` from the request header so you can test Vengtoo immediately without setting up real auth.
 
-Show the wired code and confirm with the user before writing it.
+Show the wired code and confirm with the user before writing it. Once written, emit:
+```
+✔ Authorize("document", "read") wired on GET /documents/:id
+```
 
 ---
 
-### Step 7: Offer a quick cloud setup for testing
+### Step 7: Set up the minimum cloud resources for testing
 
-The authorization check will return `NO_POLICY_MATCH` until there is a resource type and policy in Vengtoo. Ask:
+The authorization check will return `NO_POLICY_MATCH` until there is a resource type and policy in Vengtoo. Do not stop and ask — create the minimum right now and emit a tick for each:
 
-> "To test this end-to-end, I can create a resource type (`document`) and a simple ALLOW policy in your Vengtoo account. Want me to do that now, or will you set it up manually in the console?"
+1. One resource type matching the chosen endpoint's resource (e.g. `document` with a `read` action) → emit `✔ Resource type 'document' created`
+2. One starter ALLOW policy targeting that resource **type** (not a specific instance) → emit `✔ ALLOW policy created — alice → document:read`
+3. A test subject if needed — use the ID the user will pass as their identity
 
-**If yes** — use the `vengtoo-policies` API reference to create:
-1. One resource type (matching the chosen endpoint's resource)
-2. One starter ALLOW policy covering the tested action
-3. A test subject (or use an existing one if they have it)
+**Do NOT create resource instances.** A type-level policy covers all resources of that type — the evaluation request can pass any `external_id` and the policy will match on resource type + action alone. No resource instance needs to exist in Vengtoo. Creating instances here is unnecessary and misleading.
 
-**If no** — tell them what to create manually and link to the console.
+If the user already has resource types or policies set up, use what is there and emit:
+```
+✔ Resource type 'document' already exists — using it
+```
 
 ---
 
 ### Step 8: Verify
 
-Run a test against the wired endpoint. The expected result after the policy is in place:
+Run a curl or SDK test against the wired endpoint. Emit the result as a tick:
 
 ```
-✔ GET /documents/123 → decision: true (ALLOW) ✓
+✔ alice   → GET /documents/doc-1 → 200 (ALLOW)
+✔ bob     → GET /documents/doc-1 → 403 (NO_POLICY_MATCH, denied)
 ```
 
-If `NO_POLICY_MATCH` → the policy or assignment is missing. Check the chain.
-If `decision: false, EXPLICIT_DENY` → a deny policy is overriding. Check priorities.
+If `NO_POLICY_MATCH` on the allowed user → the policy or subject assignment is missing. Check the chain.
+If `EXPLICIT_DENY` → a deny policy is overriding. Check priorities.
 If `401` → bad or missing API key.
 
 ---
 
-### Step 9: Confirm and suggest next steps
+### Step 9: Confirm done
 
-Once working:
+Once the verify ticks are in, close with one line:
 
-> "Vengtoo is wired and returning decisions. This is on one endpoint — you can now expand the middleware to the rest of your routes."
+> "Vengtoo is live. Apply `Authorize(resourceType, action)` to your other routes the same way."
 
-Suggest:
-- **`/vengtoo-policies`** — build out the full authorization model (roles, more resource types, RBAC)
-- **`/vengtoo-agent`** — run a local agent for sub-millisecond decisions without cloud round-trips
-- **`/vengtoo-abac`** — add conditions (time windows, IP allowlists, attribute matching)
+Do not push the user toward other skills. If they ask what else they can do, mention roles, conditions, or a local agent — only if they ask.
 
 ---
 
