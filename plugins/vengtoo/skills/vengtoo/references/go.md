@@ -9,6 +9,104 @@ The module path is `github.com/vengtoo/vengtoo-go`. Do not use `github.com/authz
 
 ---
 
+## How subject identity works
+
+Vengtoo needs the caller's identity — the `sub` claim from the JWT the client sent.
+
+**User calls**: the client sends `Authorization: Bearer <jwt>`. Your auth middleware verifies the token and sets `sub` in context. Vengtoo middleware reads it.
+
+**Service-to-service**: the service sends a client credentials JWT. The `sub` is the `client_id`. Same flow — auth middleware sets it in context, Vengtoo reads it.
+
+Never trust a raw header like `X-User-ID` from the client. Always extract identity from a verified token.
+
+---
+
+## Auth middleware
+
+### Demo / fresh project — placeholder
+
+Use this when you want to try Vengtoo without setting up real authentication first.
+It reads `X-User-ID` from the request header and sets it as `sub` in context — the same
+slot the real middleware would fill. The Vengtoo middleware below does not change either way.
+
+```go
+func Auth(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        // DEMO ONLY: reads a plain header supplied by the caller.
+        // This is intentionally insecure — any client can claim any identity.
+        // In production, replace this with the JWT middleware below:
+        // parse the Bearer token, verify the signature, and extract sub from claims.
+        // That way identity is cryptographically proven, not self-asserted.
+        sub := r.Header.Get("X-User-ID")
+        if sub == "" {
+            http.Error(w, `{"error":"missing X-User-ID header"}`, http.StatusUnauthorized)
+            return
+        }
+        ctx := context.WithValue(r.Context(), SubjectKey, sub)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+Test with:
+```bash
+curl -H "X-User-ID: alice" http://localhost:8080/documents/doc-1
+```
+
+### Production — extract sub from Bearer JWT
+
+Wire this before the Vengtoo middleware. It verifies the token and sets `sub` in context.
+
+```go
+package middleware
+
+import (
+    "context"
+    "net/http"
+    "strings"
+
+    "github.com/golang-jwt/jwt/v5"
+)
+
+type contextKey string
+const SubjectKey contextKey = "sub"
+
+func Auth(jwtSecret []byte) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            header := r.Header.Get("Authorization")
+            if !strings.HasPrefix(header, "Bearer ") {
+                http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+                return
+            }
+            tokenStr := strings.TrimPrefix(header, "Bearer ")
+
+            token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+                return jwtSecret, nil
+            }, jwt.WithExpirationRequired())
+            if err != nil {
+                http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+                return
+            }
+
+            claims, ok := token.Claims.(jwt.MapClaims)
+            sub, hasSub := claims["sub"].(string)
+            if !ok || !hasSub || sub == "" {
+                http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+                return
+            }
+
+            ctx := context.WithValue(r.Context(), SubjectKey, sub)
+            next.ServeHTTP(w, r.WithContext(ctx))
+        })
+    }
+}
+```
+
+> If you use an external IdP (Auth0, Cognito, Keycloak), replace the HMAC key with JWKS verification. The `sub` extraction is the same.
+
+---
+
 ## Gin
 
 ### Client setup (`internal/authz/client.go`)
@@ -30,14 +128,13 @@ var Client = vengtoo.NewClient(
 ```go
 func Require(resourceType, action string) gin.HandlerFunc {
     return func(c *gin.Context) {
-        userID := c.GetString("user_id") // set by your auth middleware
-        resourceID := c.Param("id")      // your system's ID (e.g. "doc-123"), not a Vengtoo UUID
+        sub := c.GetString("sub") // set by auth middleware
 
         allowed, err := authz.Client.Check(
             c.Request.Context(),
-            vengtoo.Subject{ExternalID: userID, Type: "user"},
+            vengtoo.Subject{ExternalID: sub, Type: "user"},
             action,
-            vengtoo.Resource{Type: resourceType, ExternalID: resourceID},
+            vengtoo.Resource{Type: resourceType, ExternalID: c.Param("id")},
         )
         if err != nil || !allowed {
             c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "forbidden"})
@@ -47,23 +144,15 @@ func Require(resourceType, action string) gin.HandlerFunc {
     }
 }
 
-// Usage
-router.GET("/documents/:id", authMiddleware, authz.Require("document", "read"), getDocument)
+// Usage — auth middleware runs first, then Vengtoo
+router.GET("/documents/:id", AuthMiddleware(), authz.Require("document", "read"), getDocument)
 ```
-
-> Use `ExternalID` when passing your own system's identifiers (URL params, DB IDs, slugs).
-> Use `ID` only when you have the Vengtoo internal UUID.
-
-> For **type-level checks** (policy applies to all resources of this type), omit both `ID` and `ExternalID`:
-> `vengtoo.Resource{Type: resourceType}` — the SDK sends `id: "*"` automatically.
-
-> `AuthorizeWithPolling` is for Human-in-the-Loop flows only — it pauses and waits for a human to approve in the Vengtoo dashboard. Use `Authorize()` or `Check()` for all standard authorization checks.
 
 ### Full authorize response (with reason)
 ```go
 resp, err := authz.Client.Authorize(ctx, &vengtoo.AuthorizeRequest{
-    Subject:  vengtoo.Subject{ExternalID: userID, Type: "user"},
-    Resource: vengtoo.Resource{Type: "document", ExternalID: documentID},
+    Subject:  vengtoo.Subject{ExternalID: sub, Type: "user"},
+    Resource: vengtoo.Resource{Type: "document", ExternalID: c.Param("id")},
     Action:   vengtoo.Action{Name: "write"},
     Context:  map[string]interface{}{"ip": c.ClientIP()},
 })
@@ -90,14 +179,17 @@ if !resp.Decision {
 func VengtooMiddleware(resourceType, action string) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            userID := r.Context().Value("user_id").(string)
-            resourceID := chi.URLParam(r, "id")
+            sub, ok := r.Context().Value(middleware.SubjectKey).(string)
+            if !ok || sub == "" {
+                http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+                return
+            }
 
             allowed, err := authz.Client.Check(
                 r.Context(),
-                vengtoo.Subject{ExternalID: userID, Type: "user"},
+                vengtoo.Subject{ExternalID: sub, Type: "user"},
                 action,
-                vengtoo.Resource{Type: resourceType, ExternalID: resourceID},
+                vengtoo.Resource{Type: resourceType, ExternalID: chi.URLParam(r, "id")},
             )
             if err != nil || !allowed {
                 http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
@@ -108,7 +200,8 @@ func VengtooMiddleware(resourceType, action string) func(http.Handler) http.Hand
     }
 }
 
-// Usage
+// Usage — auth runs first in the chain
+r.Use(middleware.Auth(jwtSecret))
 r.With(VengtooMiddleware("document", "read")).Get("/documents/{id}", getDocument)
 ```
 
@@ -154,7 +247,7 @@ if err != nil {
 ## Batch evaluation
 ```go
 results, err := client.CheckBatch(ctx, &vengtoo.BatchEvaluationRequest{
-    Subject: vengtoo.Subject{ExternalID: userID, Type: "user"},
+    Subject: vengtoo.Subject{ExternalID: sub, Type: "user"},
     Items: []vengtoo.EvaluationItem{
         {Resource: vengtoo.Resource{Type: "document", ExternalID: "doc-1"}, Action: vengtoo.Action{Name: "read"}},
         {Resource: vengtoo.Resource{Type: "invoice", ExternalID: "inv-7"}, Action: vengtoo.Action{Name: "approve"}},
