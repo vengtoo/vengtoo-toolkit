@@ -42,7 +42,7 @@ Before doing anything else, tell the user:
 > "The Vengtoo MCP server reads `VENGTOO_API_KEY` from your shell environment.
 > If you haven't set it yet, add this to `~/.zshrc` (or `~/.zprofile`):
 > ```bash
-> export VENGTOO_API_KEY=azx_...
+> export VENGTOO_API_KEY=vgt_...
 > ```
 > Then restart your terminal and Claude Code so the MCP server picks it up.
 > A `.env` file in your project is **not** enough — MCP servers don't load `.env` files automatically."
@@ -92,7 +92,7 @@ npm install -g @vengtoo/mcp-gateway
 {
   "vengtoo": {
     "cloudUrl": "https://api.vengtoo.com/access/v1/evaluation",
-    "apiKey": "azx_...",
+    "apiKey": "vgt_...",
     "subject": "agent:claude-code",
     "subjectType": "agent",
     "resourceType": "mcp_tool"
@@ -109,16 +109,6 @@ npm install -g @vengtoo/mcp-gateway
   }
 }
 ```
-
-### Generate starter policy
-```bash
-npx vengtoo-mcp-gateway --config ./gateway.config.json --generate-policy ./authz.rego
-```
-
-This discovers all tools and classifies them by trust level:
-- **LOW** (read-only tools like `list_files`, `get_user`) → allowed by default
-- **MEDIUM** (write operations like `create_record`, `send_email`) → requires explicit grant
-- **HIGH** (destructive ops like `delete_table`, `drop_database`) → commented out, denied by default
 
 ### Wire into MCP client
 
@@ -140,15 +130,64 @@ claude mcp add --transport stdio vengtoo-gateway -- \
 }
 ```
 
-### Create policies in Vengtoo
+Once wired, start (or restart) your MCP client. The gateway connects to each
+downstream server, discovers its tools, and syncs them to Vengtoo — where they
+land as **pending**: discovered but not yet approved. Pending tools are denied by
+default, so nothing is callable until a human reviews it. Vengtoo classifies each
+tool's risk (low/medium/high) server-side — the gateway only reports facts.
 
-Use the MCP tools to create:
-1. Resource type: `mcp_tool` with action `invoke`
-2. Resources: one per tool (e.g., `database__query`, `filesystem__read_file`)
-3. Subject: the agent identity (e.g., `agent:claude-code`)
-4. Policies: ALLOW specific tools, DENY destructive ones
+### Review and approve discovered tools
 
-Or run `/vengtoo-policies` to be guided through this.
+This is the key step — walk the user through what the gateway found instead of
+making them click through a dashboard. Use the Vengtoo MCP tools:
+
+1. **List what was discovered:**
+   ```
+   list_pending_tools for gateway <gateway_id>
+   ```
+   The gateway id is printed in the gateway's startup logs and shown in the
+   Vengtoo console under **MCP Governance**.
+
+2. **Group by risk and present one batched decision** — don't ask tool-by-tool.
+   The response already carries each tool's risk level. Summarize, e.g.:
+   > "The gateway found 12 tools. 9 are low-risk read-only (`list_files`,
+   > `get_user`, …). 3 look destructive: `delete_table`, `drop_database`,
+   > `execute_sql`. For each group — allow, block, or leave pending?"
+
+3. **Apply the decision:**
+   - **Allow** → this is *two* actions, do both:
+     - `create_policy` — ALLOW, subject = the agent identity, resource =
+       `{server}__{tool}` (resource type `mcp_tool`, action `invoke`). This is
+       what actually authorizes the call.
+     - `approve_tool { gateway_id, tool_name }` — records the tool's current
+       schema as the approved baseline, so any later change is flagged as drift
+       (rug-pull protection).
+   - **Block** → `block_tool { gateway_id, tool_name, reason }` — hard-denies it
+     at the gateway, overriding any policy that would otherwise allow it.
+   - **Leave pending** → do nothing. It stays denied by default until reviewed.
+
+**Do not conflate approve and allow — they are different:**
+- `approve_tool` sets the *drift baseline* ("this is the schema I reviewed — warn
+  me if it changes"). It does **not** make the tool callable on its own.
+- The **ALLOW policy** is what authorizes invocation. A tool is callable only when
+  an ALLOW policy exists *and* it isn't blocked.
+- So the "allow" path above is deliberately both: create the policy (authorize) +
+  approve (baseline). Approving without a policy leaves the tool reviewed-but-denied.
+
+For unfamiliar or unclear tools, prefer **leave pending** (safe: stays denied) or
+**block** — never blanket-allow something the user can't explain. Run
+`/vengtoo-policies` for a guided walk through the policy-creation part.
+
+### Offline alternative — local policy file (no cloud)
+
+If you're running the standalone local agent with no cloud governance, skip the
+review flow above and generate a starter policy file to hand-edit instead:
+```bash
+npx vengtoo-mcp-gateway --config ./gateway.config.json --generate-policy ./policy.yaml
+```
+This discovers all tools, classifies them (LOW allowed, MEDIUM gated to specific
+subjects, HIGH disabled by default), and writes a YAML policy for
+`vengtoo-agent --policy ./policy.yaml`. Review it before use.
 
 ---
 
@@ -215,9 +254,11 @@ def vengtoo_tool(name: str, fn, args: dict, agent_id: str):
 
 | Error | Cause | Fix |
 |---|---|---|
-| All tool calls denied | No policies exist for `mcp_tool` type | Run `/vengtoo-policies` to create them |
+| All tool calls denied | Tools are still **pending** (discovered, not approved) — pending is denied by default | Run `list_pending_tools`, then allow the ones you want (create ALLOW policy + `approve_tool`) |
+| A tool stays denied after `approve_tool` | Approving only sets the drift baseline — it does not authorize | Create an ALLOW policy for the tool; approval alone never makes it callable |
 | Gateway not in MCP panel | Not added to client config | Re-run `claude mcp add` or check config file |
 | Tool name mismatch | Gateway uses `server__tool` format | Policy resource name must match exactly |
+| A tool suddenly refuses with "schema drift" | Its schema changed since approval; gateway blocked it | Review the change, then `approve_tool` to re-baseline, or `block_tool` to keep it off |
 | ABAC condition fails | Tool arg value doesn't match condition | Check condition operator and value; test with `/vengtoo-debug` |
 
 ---

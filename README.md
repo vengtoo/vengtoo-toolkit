@@ -6,7 +6,7 @@ Agent skills for [Vengtoo](https://vengtoo.com) — add fine-grained authorizati
 
 The skills work without any configuration — they provide code patterns and step-by-step guidance for any project.
 
-To use MCP tools (create policies, list subjects, evaluate access decisions from the chat), your agent needs `VENGTOO_API_KEY` available as an environment variable. Set it however your shell loads env vars — the value needs to be present when Claude Code starts. Get your key at [app.vengtoo.com](https://app.vengtoo.com) → Settings → API Keys.
+To use MCP tools (create policies, list subjects, evaluate access decisions from the chat), your agent needs `VENGTOO_API_KEY` available as an environment variable. Set it however your shell loads env vars — the value needs to be present when Claude Code starts. Get your key at [console.vengtoo.com](https://console.vengtoo.com) → Settings → API Keys.
 
 ## Install
 
@@ -26,6 +26,7 @@ claude plugins add https://github.com/vengtoo/vengtoo-toolkit/plugins/vengtoo
 | `/vengtoo-debug` | Diagnose unexpected authorization decisions |
 | `/vengtoo-ai-agents` | Delegation chains, human-in-the-loop escalation, JIT time-boxed access |
 | `/vengtoo-terraform` | Manage the full authorization model as Terraform HCL |
+| `/vengtoo-migrate` | Move off OPA/Rego, Cedar, Casbin, or homegrown RBAC — discover, translate, shadow-test, cut over |
 
 ## MCP Server
 
@@ -33,6 +34,6 @@ The toolkit wires the [Vengtoo MCP Server](https://github.com/vengtoo/vengtoo-mc
 
 ## Links
 
-- [Vengtoo Console](https://app.vengtoo.com)
+- [Vengtoo Console](https://console.vengtoo.com)
 - [Documentation](https://docs.vengtoo.com)
 - [MCP Server](https://github.com/vengtoo/vengtoo-mcp-server)

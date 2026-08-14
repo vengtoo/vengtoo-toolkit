@@ -96,7 +96,7 @@ curl -sSL https://github.com/vengtoo/agent/releases/latest/download/install.sh |
 go install github.com/vengtoo/agent/cmd/agent@latest
 
 # Run
-VENGTOO_API_KEY=azx_... vengtoo-agent
+VENGTOO_API_KEY=vgt_... vengtoo-agent
 ```
 
 ### Step 3: Wait for readiness

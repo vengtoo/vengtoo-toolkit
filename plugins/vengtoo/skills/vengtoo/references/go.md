@@ -234,7 +234,7 @@ func Authorize(resourceType, action string) func(http.Handler) http.Handler {
 
 `.env`:
 ```
-VENGTOO_API_KEY=azx_...
+VENGTOO_API_KEY=vgt_...
 # VENGTOO_BASE_URL=http://localhost:8181
 ```
 

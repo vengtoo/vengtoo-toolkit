@@ -26,7 +26,7 @@ The client connects to one server: the gateway. The gateway manages all downstre
   "vengtoo": {
     "cloudUrl": "https://api.vengtoo.com/access/v1/evaluation",
     "agentUrl": "http://localhost:8181/access/v1/evaluation",
-    "apiKey": "azx_...",
+    "apiKey": "vgt_...",
     "subject": "agent:claude-code",
     "subjectType": "agent",
     "resourceType": "mcp_tool",
@@ -82,30 +82,40 @@ Create Vengtoo resources using this exact naming so policies match.
 
 ---
 
-## Policy auto-generation
+## Reviewing discovered tools (cloud-governed)
 
-```bash
-# Discover all tools across configured servers and generate starter policy
-npx vengtoo-mcp-gateway --config ./gateway.config.json --generate-policy ./policy.json
+When the gateway is configured with an `apiKey`/`cloudUrl`, it syncs discovered
+tools to Vengtoo automatically on startup. They arrive as **pending** (denied by
+default) and Vengtoo classifies each tool's risk server-side. You do not generate
+a policy file — you review the pending tools and approve/allow/block them:
+
+```
+list_pending_tools for gateway <gateway_id>
 ```
 
-Output is a JSON file ready to import into Vengtoo. It:
-1. Lists all tools found
-2. Classifies them by risk level (read / write / destructive)
-3. Generates ALLOW entries for LOW risk, placeholders for MEDIUM/HIGH
+Then per tool:
+- **Allow** → `create_policy` (ALLOW, resource `{server}__{tool}`, action `invoke`)
+  **plus** `approve_tool` to set the drift baseline.
+- **Block** → `block_tool` (hard deny at the gateway).
+- **Leave pending** → denied by default until reviewed.
 
-Review and adjust before importing.
+`approve_tool` only baselines the schema for drift detection — it does not make a
+tool callable. The ALLOW policy is what authorizes invocation.
 
 ---
 
-## Import policy via MCP
+## Offline alternative — generate a local policy file
 
-After generating `policy.json`, use the Vengtoo MCP tools:
-```
-Import policy from ./policy.json into Vengtoo
+For the standalone local agent (no cloud governance), generate a starter YAML
+policy to hand-edit instead:
+
+```bash
+npx vengtoo-mcp-gateway --config ./gateway.config.json --generate-policy ./policy.yaml
 ```
 
-Or manually create policies in the Vengtoo console.
+It lists all tools, classifies them (LOW allowed, MEDIUM gated, HIGH disabled by
+default), and writes a YAML policy for `vengtoo-agent --policy ./policy.yaml`.
+Review before use.
 
 ---
 

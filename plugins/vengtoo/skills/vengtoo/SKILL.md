@@ -48,7 +48,7 @@ Load the appropriate reference file before proceeding:
 Example of what this looks like in practice (adapts to what actually happened):
 ```
 ✔ Detected Go + Chi — 8 endpoints found
-✔ VENGTOO_API_KEY placeholder added to .env — fill in from app.vengtoo.com → Settings → API Keys
+✔ VENGTOO_API_KEY placeholder added to .env — fill in from console.vengtoo.com → Settings → API Keys
 ✔ vengtoo-go v0.3.1 installed
 ✔ Authorize("document", "read") wired on GET /documents/:id
 ✔ Resource type `document` created (actions: read, write, delete)
@@ -118,7 +118,7 @@ If `.env` already exists, append the line (only if `VENGTOO_API_KEY` is not alre
 Also ensure `.env` is in `.gitignore` — add it if missing.
 
 Then tell the user:
-> "I've added `VENGTOO_API_KEY` to your `.env` — fill in the value from **app.vengtoo.com → Settings → API Keys** before running."
+> "I've added `VENGTOO_API_KEY` to your `.env` — fill in the value from **console.vengtoo.com → Settings → API Keys** before running."
 
 Emit:
 ```

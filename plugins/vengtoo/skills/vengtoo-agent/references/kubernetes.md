@@ -96,7 +96,7 @@ metadata:
   name: vengtoo-credentials
 type: Opaque
 stringData:
-  api-key: "azx_..."
+  api-key: "vgt_..."
 ```
 
 ```bash

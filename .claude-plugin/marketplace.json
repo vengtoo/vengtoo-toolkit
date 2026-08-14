@@ -1,7 +1,7 @@
 {
   "metadata": {
     "description": "A plugin marketplace hosting installable authorization plugins for Vengtoo.",
-    "version": "0.1.5"
+    "version": "0.2.0"
   },
   "name": "vengtoo-toolkit",
   "owner": {
@@ -10,7 +10,7 @@
   "plugins": [
     {
       "category": "developer-tools",
-      "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, and manage everything as Terraform.",
+      "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, migrate off an existing system, and manage everything as Terraform.",
       "keywords": [
         "authorization",
         "authz",
@@ -32,11 +32,12 @@
         "fine-grained-authorization",
         "fga",
         "opa",
-        "open-policy-agent"
+        "open-policy-agent",
+        "migration"
       ],
       "name": "vengtoo",
       "source": "./plugins/vengtoo",
-      "version": "0.1.5"
+      "version": "0.2.0"
     }
   ]
 }

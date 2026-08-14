@@ -1,6 +1,6 @@
 # Vengtoo Agent — Config Reference
 
-All `VENGTOO_*` environment variables. Every config can also be set via `authzx-agent.yml`.
+All `VENGTOO_*` environment variables. Every config can also be set via `vengtoo-agent.yml`.
 
 ---
 
@@ -67,7 +67,7 @@ Set `VENGTOO_AGENT_HOSTING=vengtoo` if using Vengtoo's managed agent — all oth
 
 ---
 
-## Example `authzx-agent.yml`
+## Example `vengtoo-agent.yml`
 
 ```yaml
 # VENGTOO_* env vars override these values at runtime

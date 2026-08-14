@@ -204,7 +204,7 @@ def get_document(id):
 
 `.env`:
 ```
-VENGTOO_API_KEY=azx_...
+VENGTOO_API_KEY=vgt_...
 JWT_SECRET=your-secret
 # VENGTOO_BASE_URL=http://localhost:8181
 ```

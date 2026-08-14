@@ -1,7 +1,7 @@
 {
   "name": "vengtoo",
-  "version": "0.1.5",
-  "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, and manage everything as Terraform.",
+  "version": "0.2.0",
+  "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, migrate off an existing system, and manage everything as Terraform.",
   "author": {
     "name": "Vengtoo",
     "email": "hello@vengtoo.com",
@@ -29,20 +29,22 @@
     "hitl",
     "jit",
     "fine-grained-authorization",
-    "fga"
+    "fga",
+    "migration"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Vengtoo Authorization Toolkit",
     "shortDescription": "Fine-grained authorization for any project — SDK, agent, policies, MCP, ABAC, debug, Terraform.",
-    "longDescription": "Eight skills covering the full Vengtoo authorization workflow: install the SDK (Node/Go/Python), deploy the local evaluation agent, build RBAC/ABAC policy models via MCP tools, authorize AI agent tool calls (Gateway and Adapter), add attribute-based conditions, debug unexpected decisions, implement delegation and JIT access for AI agents, and manage everything as Terraform HCL.",
+    "longDescription": "Nine skills covering the full Vengtoo authorization workflow: install the SDK (Node/Go/Python), deploy the local evaluation agent, build RBAC/ABAC policy models via MCP tools, authorize AI agent tool calls (Gateway and Adapter), add attribute-based conditions, debug unexpected decisions, implement delegation and JIT access for AI agents, migrate off an existing system (OPA/Rego, Cedar, Casbin, homegrown RBAC), and manage everything as Terraform HCL.",
     "defaultPrompt": [
       "Add Vengtoo authorization to my project.",
       "Deploy the Vengtoo agent locally.",
       "Build an authorization model for my app.",
       "Authorize MCP tool calls with Vengtoo.",
-      "Why is my authorization check returning false?"
+      "Why is my authorization check returning false?",
+      "Migrate off OPA/Rego to Vengtoo."
     ],
     "developerName": "Vengtoo",
     "category": "Development",

@@ -198,7 +198,7 @@ export default async function DocumentPage({ params }) {
 
 `.env.local` (Next.js) or `.env`:
 ```
-VENGTOO_API_KEY=azx_...
+VENGTOO_API_KEY=vgt_...
 JWT_SECRET=your-secret
 # VENGTOO_BASE_URL=http://localhost:8181  # local agent
 ```

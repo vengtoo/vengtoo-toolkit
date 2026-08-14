@@ -1,8 +1,8 @@
 {
   "name": "vengtoo",
   "displayName": "Vengtoo Authorization Toolkit",
-  "version": "0.1.5",
-  "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, and manage everything as Terraform.",
+  "version": "0.2.0",
+  "description": "Add authorization to any project, deploy the local agent, build policy models, authorize AI agent tool calls, add attribute-based conditions, debug access decisions, migrate off an existing system, and manage everything as Terraform.",
   "author": {
     "name": "Vengtoo",
     "url": "https://vengtoo.com"
@@ -31,7 +31,8 @@
     "fine-grained-authorization",
     "fga",
     "opa",
-    "open-policy-agent"
+    "open-policy-agent",
+    "migration"
   ],
   "skills": "./skills/",
   "mcpServers": "./.mcp.json"
